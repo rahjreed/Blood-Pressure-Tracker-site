@@ -1,0 +1,143 @@
+import { expect, test } from '@playwright/test'
+import AxeBuilder from '@axe-core/playwright'
+import { readFile } from 'node:fs/promises'
+
+const nav = page => page.getByRole('navigation', { name: 'Main navigation' })
+
+async function enterValues(page, systolic, diastolic, pulse) {
+  await page.getByLabel(/Systolic/).fill(String(systolic))
+  await page.getByLabel(/Diastolic/).fill(String(diastolic))
+  if (pulse != null) await page.getByLabel(/Pulse/).fill(String(pulse))
+}
+
+async function logReading(page) {
+  await page.getByRole('button', { name: 'Log a reading' }).first().click()
+  await enterValues(page, 122, 78, 68)
+  await page.getByLabel('Notes Optional').fill('Seated at home')
+  await page.getByRole('button', { name: 'Save reading', exact: true }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+}
+
+async function axe(page) {
+  const result = await new AxeBuilder({ page }).setLegacyMode().withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze()
+  expect(result.violations.map(item => ({ id: item.id, nodes: item.nodes.map(node => node.target) }))).toEqual([])
+}
+
+test('opens with an empty dashboard and accessible keyboard navigation', async ({ page }, testInfo) => {
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible()
+  await expect(page.getByText('No readings yet')).toBeVisible()
+  await expect(page.getByText('No trend data yet')).toBeVisible()
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await axe(page)
+  await page.keyboard.press('Tab')
+  await expect(page.getByRole('link', { name: 'Skip to content' })).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('heading', { name: 'Overview' })).toBeFocused()
+  await page.getByRole('heading', { name: 'Overview' }).evaluate(heading => heading.blur())
+  await page.screenshot({ path: testInfo.outputPath('overview.png'), fullPage: true })
+  await page.getByRole('button', { name: 'Log a reading' }).click()
+  await page.getByRole('button', { name: 'Save reading', exact: true }).click()
+  await expect(page.getByLabel(/Systolic/)).toBeFocused()
+  await axe(page)
+  await enterValues(page, 181, 80)
+  await expect(page.getByRole('alert').getByText('This reading is in the severe range.')).toBeVisible()
+  await page.getByRole('checkbox', { name: /warning symptoms/ }).check()
+  await expect(page.getByText('Call emergency services now', { exact: false })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('button', { name: 'Log a reading' })).toBeFocused()
+})
+
+test('records, reloads, searches, edits, and deletes a reading', async ({ page }) => {
+  await page.goto('/')
+  await logReading(page)
+  await expect(page.getByText('Elevated', { exact: true })).toBeVisible()
+  await page.reload()
+  await expect(page.getByText('Elevated', { exact: true })).toBeVisible()
+  await nav(page).getByRole('link', { name: 'History' }).click()
+  const search = page.getByRole('searchbox')
+  await search.fill('unknown note')
+  await expect(page.getByText('No matching readings')).toBeVisible()
+  await search.fill('seated')
+  await expect(page.getByText('122/78')).toBeVisible()
+  await page.getByRole('button', { name: /Edit reading/ }).click()
+  await page.getByLabel(/Systolic/).fill('134')
+  await page.getByRole('button', { name: 'Save changes' }).click()
+  await expect(page.getByText('134/78')).toBeVisible()
+  await expect(page.getByText('Stage 1 high', { exact: true }).last()).toBeVisible()
+  await page.getByRole('button', { name: /Delete reading from/ }).click()
+  await page.getByRole('button', { name: 'Delete reading', exact: true }).click()
+  await expect(page.getByText('Your history is empty')).toBeVisible()
+})
+
+test('logs a guided session and counts its checkup slot once', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: /7-day checkup/ }).click()
+  await page.getByRole('button', { name: 'Start today' }).click()
+  await page.getByRole('button', { name: 'Start guided session' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: 'Start timer' }).click()
+  await expect(dialog.getByRole('timer')).toHaveText(/4:5\d/)
+  await dialog.getByRole('button', { name: 'Enter first reading' }).click()
+  await enterValues(page, 120, 77)
+  await dialog.getByRole('button', { name: 'Continue' }).click()
+  await expect(dialog.getByRole('timer')).toHaveText('1:00')
+  await dialog.getByRole('button', { name: 'Enter second reading' }).click()
+  await enterValues(page, 126, 79, 70)
+  await dialog.getByRole('button', { name: 'Review session' }).click()
+  await expect(dialog.getByText('123/78')).toBeVisible()
+  await dialog.getByRole('button', { name: 'Save session' }).click()
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', '1')
+  await nav(page).getByRole('link', { name: 'History' }).click()
+  await expect(page.getByText('Full session average 123/78 mmHg · 2 readings')).toBeVisible()
+  await expect(page.getByRole('article')).toHaveCount(2)
+})
+
+test('logs and reviews offline, previews a report, and downloads PDF, CSV, and JSON', async ({ page, context }, testInfo) => {
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)), {
+    message: 'The app shell must be cached and controlled before going offline',
+    timeout: 20_000,
+  }).toBe(true)
+  await context.setOffline(true)
+  await page.reload()
+  await expect(page.getByText(/Offline · readings are saved/)).toBeVisible()
+  await logReading(page)
+  await page.reload()
+  await expect(page.getByText('Elevated', { exact: true })).toBeVisible()
+  await nav(page).getByRole('link', { name: 'Reports' }).click()
+  await page.getByLabel('Patient name Optional').fill('Report Test')
+  await page.getByRole('button', { name: 'Preview report' }).click()
+  await expect(page.getByRole('dialog').getByText('Patient: Report Test')).toBeVisible()
+  await expect(page.getByRole('dialog').getByText('Seated at home')).toBeVisible()
+  const pdfEvent = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Download PDF' }).click()
+  const pdf = await pdfEvent
+  const output = testInfo.outputPath('report.pdf')
+  await pdf.saveAs(output)
+  const bytes = await readFile(output)
+  expect(bytes.toString('utf8', 0, 4)).toBe('%PDF')
+  expect(bytes.toString('latin1')).toContain('Seated at home')
+  await page.getByRole('button', { name: 'Close preview' }).click()
+  const csvEvent = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export CSV' }).click()
+  const csv = await csvEvent
+  expect(await readFile(await csv.path(), 'utf8')).toContain('Seated at home')
+  await nav(page).getByRole('link', { name: 'Settings' }).click()
+  await page.getByLabel('Theme').selectOption('Dark')
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await axe(page)
+  const jsonEvent = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Download JSON backup' }).click()
+  const json = await jsonEvent
+  const backupPath = testInfo.outputPath('backup.json')
+  await json.saveAs(backupPath)
+  await page.getByRole('button', { name: 'Clear all data', exact: true }).click()
+  await page.getByRole('button', { name: 'Yes, clear all data' }).click()
+  await page.locator('input[type=file]').setInputFiles(backupPath)
+  await page.getByRole('button', { name: 'Import readings' }).click()
+  await expect(page.getByText('Imported 1 readings. Skipped 0 existing records.')).toBeVisible()
+  await nav(page).getByRole('link', { name: 'History' }).click()
+  await expect(page.getByText('Seated at home')).toBeVisible()
+})
