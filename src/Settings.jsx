@@ -152,7 +152,8 @@ export function Settings({ data, headingRef, saveSettings, merge, clear, navigat
         <label>Theme<select value={theme} onChange={event => saveSettings({ theme: event.target.value })}><option>System</option><option>Light</option><option>Dark</option></select></label>
       </section>
       <section className="card settings-card">
-        <h2>Haptic feedback</h2>
+        <h2>Sound and haptic feedback</h2>
+        <label>Timer chime<select value={data.settings.timerSound ? 'On' : 'Off'} onChange={event => saveSettings({ timerSound: event.target.value === 'On' })}><option>On</option><option>Off</option></select></label>
         <p>Subtle vibrations for actions and timer completion on supported devices.</p>
         <label>Vibration<select value={data.settings.haptics ? 'On' : 'Off'} onChange={async event => {
           const enabled = event.target.value === 'On'
