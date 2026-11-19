@@ -3,7 +3,7 @@ import { chronological, sessionRecord } from './measurements.js'
 const DB_NAME = 'pressure'
 const DB_VERSION = 1
 const STORES = ['readings', 'sessions', 'preferences']
-export const defaultSettings = { theme: 'System', morning: '', evening: '', haptics: true }
+export const defaultSettings = { theme: 'System', morning: '', evening: '', haptics: true, timerSound: true }
 
 const result = request => new Promise((resolve, reject) => {
   request.onsuccess = () => resolve(request.result)
