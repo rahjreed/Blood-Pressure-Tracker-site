@@ -1,3 +1,4 @@
+import { clearTimerNotification, enableTimerNotifications, notifyTimer, playTimerSound, prepareTimerSound } from './timerAlerts.js'
 import { haptic } from './haptics.js'
 import { useEffect, useRef, useState } from 'react'
 import { ArrowRight, Check, Timer } from 'lucide-react'
@@ -66,32 +67,48 @@ export function ReadingForm({ original, defaults, submit, submitLabel = 'Save re
   </form>
 }
 
-function Countdown({ seconds, label, haptics }) {
+function Countdown({ seconds, label, haptics, timerSound }) {
   const [deadline, setDeadline] = useState(0)
   const [remaining, setRemaining] = useState(seconds)
   const enabled = useRef(haptics)
+  const sound = useRef(timerSound)
+  const [notifications, setNotifications] = useState(false)
+  useEffect(() => { sound.current = timerSound }, [timerSound])
   useEffect(() => { enabled.current = haptics }, [haptics])
   useEffect(() => {
     if (!deadline) return
+    if (notifications) notifyTimer(label, deadline)
+    let finished = false
     const interval = setInterval(() => {
       const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000))
       setRemaining(left)
-      if (!left) { clearInterval(interval); haptic('timer', enabled.current) }
+      if (!left && !finished) {
+        finished = true
+        clearInterval(interval)
+        haptic('timer', enabled.current)
+        if (sound.current) playTimerSound()
+        if (notifications) notifyTimer(label, deadline, true)
+      }
     }, 200)
-    return () => clearInterval(interval)
-  }, [deadline])
+    return () => { clearInterval(interval); if (notifications) clearTimerNotification() }
+  }, [deadline, label, notifications])
   return <div className="countdown">
     <Timer aria-hidden="true" />
     <span role="timer" aria-label={label}>{Math.floor(remaining / 60)}:{String(remaining % 60).padStart(2, '0')}</span>
     <button type="button" disabled={deadline > 0 && remaining > 0} onClick={() => {
+      if (timerSound) prepareTimerSound()
       setRemaining(seconds)
       setDeadline(Date.now() + seconds * 1000)
     }}>{deadline ? 'Restart timer' : 'Start timer'}</button>
+    {!notifications && !deadline && <button type="button" onClick={async () => {
+      setNotifications(await enableTimerNotifications())
+    }}>Enable timer notifications</button>}
+    <span className="helper">Keep PRESSURE open for the chime. Background alerts may be delayed.</span>
     <span className="sr-only" role="status">{remaining === 0 ? `${label} complete.` : ''}</span>
   </div>
 }
 
-export function GuidedForm({ defaults, submit, cancel, pending, haptics }) {
+export function GuidedForm({ defaults, submit, cancel, pending, haptics, timerSound }) {
   const [step, setStep] = useState(0)
   const [first, setFirst] = useState(null)
   const [second, setSecond] = useState(null)
@@ -107,7 +124,7 @@ export function GuidedForm({ defaults, submit, cancel, pending, haptics }) {
         <li>Sit with your back supported and both feet flat. Keep your legs uncrossed and your bare arm supported at heart level.</li>
         <li>Rest quietly for at least five minutes. Stay still and avoid talking while measuring.</li>
       </ul>
-      <Countdown haptics={haptics} seconds={300} label="Rest timer" />
+      <Countdown timerSound={timerSound} haptics={haptics} seconds={300} label="Rest timer" />
     </>}
     {step === 1 && <ReadingForm haptics={haptics} key="first" defaults={defaults} submitLabel="Continue" cancel={cancel} submit={reading => {
       haptic('tap', haptics)
@@ -117,7 +134,7 @@ export function GuidedForm({ defaults, submit, cancel, pending, haptics }) {
     {step === 2 && <>
       <Safety reading={first} />
       <p>Stay seated and wait at least one minute between readings.</p>
-      <Countdown haptics={haptics} key="interval" seconds={60} label="Interval timer" />
+      <Countdown timerSound={timerSound} haptics={haptics} key="interval" seconds={60} label="Interval timer" />
     </>}
     {step === 3 && <ReadingForm haptics={haptics} key="second" defaults={{ ...defaults, dateTime: localInput(), arm: first.arm, period: first.period }}
       submitLabel="Review session" cancel={cancel} submit={reading => {
