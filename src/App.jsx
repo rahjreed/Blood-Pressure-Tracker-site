@@ -241,7 +241,7 @@ export default function App() {
         haptics={data.settings.haptics} original={dialog.reading} defaults={dialog.defaults} pending={pending} cancel={close}
         submitLabel={dialog.kind === 'edit' ? 'Save changes' : 'Save reading'}
         submit={reading => confirm(db => db.save([reading], dialog.kind === 'edit'), dialog.kind === 'edit' ? 'Reading updated.' : 'Reading saved.', readingFeedback([reading]))} />}
-      {dialog.kind === 'guided' && <GuidedForm haptics={data.settings.haptics} defaults={dialog.defaults} pending={pending} cancel={close}
+      {dialog.kind === 'guided' && <GuidedForm timerSound={data.settings.timerSound} haptics={data.settings.haptics} defaults={dialog.defaults} pending={pending} cancel={close}
         submit={readings => confirm(db => db.save(readings), 'Guided session saved.', readingFeedback(readings))} />}
       {dialog.kind === 'delete' && <>
         <p>Delete {dialog.reading.systolic}/{dialog.reading.diastolic} mmHg from {readingLabel(dialog.reading)}?</p>
