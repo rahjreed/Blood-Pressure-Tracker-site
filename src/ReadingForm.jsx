@@ -1,9 +1,10 @@
+import { haptic } from './haptics.js'
 import { useEffect, useRef, useState } from 'react'
 import { ArrowRight, Check, Timer } from 'lucide-react'
 import { averages, displayAverage, emergencySymptoms, initialReading, localInput, PERIODS, TAGS, validateDraft } from './measurements.js'
 import { Safety } from './ui.jsx'
 
-export function ReadingForm({ original, defaults, submit, submitLabel = 'Save reading', cancel, pending }) {
+export function ReadingForm({ original, defaults, submit, submitLabel = 'Save reading', cancel, pending, haptics }) {
   const [draft, setDraft] = useState(() => initialReading(original, defaults))
   const [errors, setErrors] = useState({})
   const form = useRef(null)
@@ -31,7 +32,7 @@ export function ReadingForm({ original, defaults, submit, submitLabel = 'Save re
     const result = validateDraft(draft, original)
     setErrors(result.errors)
     if (result.reading) submit(result.reading)
-    else form.current.elements.namedItem(Object.keys(result.errors)[0])?.focus()
+    else { haptic('warning', haptics); form.current.elements.namedItem(Object.keys(result.errors)[0])?.focus() }
   }}>
     <div className="pressure-fields">
       {[['systolic', 'Systolic', 'mmHg'], ['diastolic', 'Diastolic', 'mmHg'], ['pulse', 'Pulse', 'BPM · optional']].map(([key, label, unit]) =>
@@ -65,15 +66,17 @@ export function ReadingForm({ original, defaults, submit, submitLabel = 'Save re
   </form>
 }
 
-function Countdown({ seconds, label }) {
+function Countdown({ seconds, label, haptics }) {
   const [deadline, setDeadline] = useState(0)
   const [remaining, setRemaining] = useState(seconds)
+  const enabled = useRef(haptics)
+  useEffect(() => { enabled.current = haptics }, [haptics])
   useEffect(() => {
     if (!deadline) return
     const interval = setInterval(() => {
       const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000))
       setRemaining(left)
-      if (!left) clearInterval(interval)
+      if (!left) { clearInterval(interval); haptic('timer', enabled.current) }
     }, 200)
     return () => clearInterval(interval)
   }, [deadline])
@@ -88,7 +91,7 @@ function Countdown({ seconds, label }) {
   </div>
 }
 
-export function GuidedForm({ defaults, submit, cancel, pending }) {
+export function GuidedForm({ defaults, submit, cancel, pending, haptics }) {
   const [step, setStep] = useState(0)
   const [first, setFirst] = useState(null)
   const [second, setSecond] = useState(null)
@@ -104,20 +107,22 @@ export function GuidedForm({ defaults, submit, cancel, pending }) {
         <li>Sit with your back supported and both feet flat. Keep your legs uncrossed and your bare arm supported at heart level.</li>
         <li>Rest quietly for at least five minutes. Stay still and avoid talking while measuring.</li>
       </ul>
-      <Countdown seconds={300} label="Rest timer" />
+      <Countdown haptics={haptics} seconds={300} label="Rest timer" />
     </>}
-    {step === 1 && <ReadingForm key="first" defaults={defaults} submitLabel="Continue" cancel={cancel} submit={reading => {
+    {step === 1 && <ReadingForm haptics={haptics} key="first" defaults={defaults} submitLabel="Continue" cancel={cancel} submit={reading => {
+      haptic('tap', haptics)
       setFirst(reading)
       setStep(2)
     }} />}
     {step === 2 && <>
       <Safety reading={first} />
       <p>Stay seated and wait at least one minute between readings.</p>
-      <Countdown key="interval" seconds={60} label="Interval timer" />
+      <Countdown haptics={haptics} key="interval" seconds={60} label="Interval timer" />
     </>}
-    {step === 3 && <ReadingForm key="second" defaults={{ ...defaults, dateTime: localInput(), arm: first.arm, period: first.period }}
+    {step === 3 && <ReadingForm haptics={haptics} key="second" defaults={{ ...defaults, dateTime: localInput(), arm: first.arm, period: first.period }}
       submitLabel="Review session" cancel={cancel} submit={reading => {
-        setSecond(reading)
+        haptic('tap', haptics)
+      setSecond(reading)
         setStep(4)
       }} />}
     {step === 4 && <>
@@ -129,7 +134,7 @@ export function GuidedForm({ defaults, submit, cancel, pending }) {
       <p className="muted">Both measurements and their session average will be saved.</p>
       <Safety reading={second} />
       <div className="actions end"><button onClick={() => setStep(3)}>Re-enter second reading</button>
-        <button className="primary" disabled={pending} onClick={() => {
+        <button className="primary" data-haptic="custom" disabled={pending} onClick={() => {
           const sessionId = first.id
           submit([{ ...first, sessionId }, { ...second, sessionId }])
         }}><Check aria-hidden="true" /> Save session</button></div>
