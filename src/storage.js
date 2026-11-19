@@ -3,7 +3,7 @@ import { chronological, sessionRecord } from './measurements.js'
 const DB_NAME = 'pressure'
 const DB_VERSION = 1
 const STORES = ['readings', 'sessions', 'preferences']
-export const defaultSettings = { theme: 'System', morning: '', evening: '' }
+export const defaultSettings = { theme: 'System', morning: '', evening: '', haptics: true, timerSound: true }
 
 const result = request => new Promise((resolve, reject) => {
   request.onsuccess = () => resolve(request.result)
@@ -56,7 +56,7 @@ export async function openStorage(factory = indexedDB, name = DB_NAME) {
         result(stores.readings.getAll()), result(stores.sessions.getAll()),
         result(stores.preferences.get('settings')), result(stores.preferences.get('checkup')),
       ])
-      return { readings: chronological(readings).reverse(), sessions, settings: settings ?? defaultSettings, checkup: checkup ?? null }
+      return { readings: chronological(readings).reverse(), sessions, settings: { ...defaultSettings, ...settings }, checkup: checkup ?? null }
     }),
     save: (readings, editing = false) => transact('readwrite', async stores => {
       for (const reading of readings) {

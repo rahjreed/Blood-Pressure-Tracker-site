@@ -28,3 +28,14 @@ self.addEventListener('fetch', event => {
     event.respondWith(caches.open(cacheName).then(async cache => await cache.match(url.pathname) ?? fetch(request)))
   }
 })
+
+self.addEventListener('notificationclick', event => {
+  if (!event.notification.data?.pressureTimer) return
+  event.notification.close()
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    const client = windows.find(item => new URL(item.url).origin === self.location.origin)
+    if (client) await client.focus()
+    else await self.clients.openWindow('/')
+  })())
+})

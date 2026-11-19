@@ -4,7 +4,8 @@ import Dashboard, { PageHeader } from './Dashboard.jsx'
 import { GuidedForm, ReadingForm } from './ReadingForm.jsx'
 import { About, Privacy, Reminder, Reports, Settings, StorageError } from './Settings.jsx'
 import { Checkup, History, Insights } from './Tracking.jsx'
-import { dayKey, readingLabel } from './measurements.js'
+import { classify, isLow, dayKey, readingLabel } from './measurements.js'
+import { haptic } from './haptics.js'
 import { openStorage } from './storage.js'
 import { Dialog, InfoLink } from './ui.jsx'
 
@@ -18,6 +19,7 @@ const currentRoute = () => {
   const key = window.location.hash.slice(1)
   return routes.has(key) ? key : 'overview'
 }
+const readingFeedback = readings => readings.some(reading => reading.emergency || isLow(reading) || classify(reading) !== 'normal') ? 'warning' : 'success'
 const navigate = key => { window.location.hash = key === 'overview' ? '' : key }
 
 function Brand() {
@@ -27,8 +29,11 @@ function Brand() {
   </a>
 }
 
-function Shell({ route, children, offline, update }) {
-  return <div className="shell">
+function Shell({ route, children, offline, update, haptics }) {
+  return <div className="shell" onClick={event => {
+    const target = event.target.closest?.('button:not(:disabled), nav a, .brand')
+    if (target && !target.matches('[type="submit"], .danger, [data-haptic="custom"]') && !target.closest('form button:not([type="button"])')) haptic('tap', haptics)
+  }}>
     <a href="#main" className="skip-link" onClick={event => {
       event.preventDefault()
       document.querySelector('#main h1')?.focus()
@@ -182,10 +187,13 @@ export default function App() {
   const log = defaults => showDialog({ kind: 'log', defaults: defaults?.period ? defaults : undefined })
   const guided = defaults => showDialog({ kind: 'guided', defaults: defaults?.period ? defaults : undefined })
   const close = () => { if (!pending) setDialog(null) }
-  async function confirm(operation, message) {
+  async function confirm(operation, message, feedback = 'success') {
     setDialogError('')
     setPending(true)
-    if (await change(operation, message)) setDialog(null)
+    if (await change(operation, message)) {
+      haptic(feedback, data.settings.haptics)
+      setDialog(null)
+    }
     setPending(false)
   }
 
@@ -224,21 +232,21 @@ export default function App() {
   }
 
   const titles = { log: 'Log a reading', edit: 'Edit reading', guided: 'Guided measurement', delete: 'Delete this reading?', 'reset-checkup': 'Clear this checkup?' }
-  return <Shell route={route} offline={browser.offline} update={browser.update}>
+  return <Shell route={route} offline={browser.offline} update={browser.update} haptics={data?.settings.haptics === true}>
     {data && !failed && <Reminder settings={data.settings} readings={data.readings} onLog={log} />}
     {page}
     {dialog && <Dialog key={dialog.kind} title={titles[dialog.kind]} close={close}>
       {dialogError && <p className="field-error" role="alert">{dialogError}</p>}
       {(dialog.kind === 'log' || dialog.kind === 'edit') && <ReadingForm
-        original={dialog.reading} defaults={dialog.defaults} pending={pending} cancel={close}
+        haptics={data.settings.haptics} original={dialog.reading} defaults={dialog.defaults} pending={pending} cancel={close}
         submitLabel={dialog.kind === 'edit' ? 'Save changes' : 'Save reading'}
-        submit={reading => confirm(db => db.save([reading], dialog.kind === 'edit'), dialog.kind === 'edit' ? 'Reading updated.' : 'Reading saved.')} />}
-      {dialog.kind === 'guided' && <GuidedForm defaults={dialog.defaults} pending={pending} cancel={close}
-        submit={readings => confirm(db => db.save(readings), 'Guided session saved.')} />}
+        submit={reading => confirm(db => db.save([reading], dialog.kind === 'edit'), dialog.kind === 'edit' ? 'Reading updated.' : 'Reading saved.', readingFeedback([reading]))} />}
+      {dialog.kind === 'guided' && <GuidedForm timerSound={data.settings.timerSound} haptics={data.settings.haptics} defaults={dialog.defaults} pending={pending} cancel={close}
+        submit={readings => confirm(db => db.save(readings), 'Guided session saved.', readingFeedback(readings))} />}
       {dialog.kind === 'delete' && <>
         <p>Delete {dialog.reading.systolic}/{dialog.reading.diastolic} mmHg from {readingLabel(dialog.reading)}?</p>
         <div className="actions end"><button autoFocus disabled={pending} onClick={close}>Cancel</button>
-          <button className="danger" disabled={pending} onClick={() => confirm(db => db.remove(dialog.reading.id), 'Reading deleted.')}>Delete reading</button></div>
+          <button className="danger" disabled={pending} onClick={() => confirm(db => db.remove(dialog.reading.id), 'Reading deleted.', 'delete')}>Delete reading</button></div>
       </>}
       {dialog.kind === 'reset-checkup' && <>
         <p>This clears the checkup dates and progress. Your measurements stay in History.</p>
