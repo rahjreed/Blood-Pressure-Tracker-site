@@ -4,7 +4,7 @@ import Dashboard, { PageHeader } from './Dashboard.jsx'
 import { GuidedForm, ReadingForm } from './ReadingForm.jsx'
 import { About, Privacy, Reminder, Reports, Settings, StorageError } from './Settings.jsx'
 import { Checkup, History, Insights } from './Tracking.jsx'
-import { dayKey, readingLabel } from './measurements.js'
+import { classify, isLow, dayKey, readingLabel } from './measurements.js'
 import { haptic } from './haptics.js'
 import { openStorage } from './storage.js'
 import { Dialog, InfoLink } from './ui.jsx'
@@ -19,6 +19,7 @@ const currentRoute = () => {
   const key = window.location.hash.slice(1)
   return routes.has(key) ? key : 'overview'
 }
+const readingFeedback = readings => readings.some(reading => reading.emergency || isLow(reading) || classify(reading) !== 'normal') ? 'warning' : 'success'
 const navigate = key => { window.location.hash = key === 'overview' ? '' : key }
 
 function Brand() {
@@ -239,9 +240,9 @@ export default function App() {
       {(dialog.kind === 'log' || dialog.kind === 'edit') && <ReadingForm
         haptics={data.settings.haptics} original={dialog.reading} defaults={dialog.defaults} pending={pending} cancel={close}
         submitLabel={dialog.kind === 'edit' ? 'Save changes' : 'Save reading'}
-        submit={reading => confirm(db => db.save([reading], dialog.kind === 'edit'), dialog.kind === 'edit' ? 'Reading updated.' : 'Reading saved.')} />}
+        submit={reading => confirm(db => db.save([reading], dialog.kind === 'edit'), dialog.kind === 'edit' ? 'Reading updated.' : 'Reading saved.', readingFeedback([reading]))} />}
       {dialog.kind === 'guided' && <GuidedForm haptics={data.settings.haptics} defaults={dialog.defaults} pending={pending} cancel={close}
-        submit={readings => confirm(db => db.save(readings), 'Guided session saved.')} />}
+        submit={readings => confirm(db => db.save(readings), 'Guided session saved.', readingFeedback(readings))} />}
       {dialog.kind === 'delete' && <>
         <p>Delete {dialog.reading.systolic}/{dialog.reading.diastolic} mmHg from {readingLabel(dialog.reading)}?</p>
         <div className="actions end"><button autoFocus disabled={pending} onClick={close}>Cancel</button>
