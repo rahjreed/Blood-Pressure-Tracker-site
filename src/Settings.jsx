@@ -1,3 +1,4 @@
+import { haptic, supportsHaptics } from './haptics.js'
 import { useEffect, useRef, useState } from 'react'
 import { Bell, Download, FileText, HardDrive, Info, LockKeyhole, Monitor, ShieldCheck, Upload } from 'lucide-react'
 import { download, makeBackup, makeCsv, maxBackupBytes, readBackup } from './backups.js'
@@ -149,6 +150,16 @@ export function Settings({ data, headingRef, saveSettings, merge, clear, navigat
       <section className="card settings-card">
         <header className="section-intro"><span className="icon-tile"><Monitor aria-hidden="true" /></span><h2>Appearance</h2></header>
         <label>Theme<select value={theme} onChange={event => saveSettings({ theme: event.target.value })}><option>System</option><option>Light</option><option>Dark</option></select></label>
+      </section>
+      <section className="card settings-card">
+        <h2>Haptic feedback</h2>
+        <p>Subtle vibrations for actions and timer completion on supported devices.</p>
+        <label>Vibration<select value={data.settings.haptics ? 'On' : 'Off'} onChange={async event => {
+          const enabled = event.target.value === 'On'
+          if (!enabled && supportsHaptics()) { try { navigator.vibrate(0) } catch { /* Optional feedback. */ } }
+          if (await saveSettings({ haptics: enabled }) && enabled) haptic('tap', true)
+        }}><option>On</option><option>Off</option></select></label>
+        {supportsHaptics() ? <button data-haptic="custom" disabled={!data.settings.haptics} onClick={() => haptic('success', true)}>Test vibration</button> : <p className="muted">Vibration is not available in this browser.</p>}
       </section>
       <section className="card settings-card">
         <header className="section-intro"><span className="icon-tile"><Download aria-hidden="true" /></span><h2>Install PRESSURE</h2></header>
